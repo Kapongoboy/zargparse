@@ -43,10 +43,16 @@ const ArgumentParser = struct {
             self.arg_iter.deinit();
             self.arg_table.deinit();
         }
+
+        var iter = self.arg_table.keyIterator();
+
+        while (iter.next()) |key| {
+            self.ally.free(key.*);
+        }
     }
 
     ///  TODO have to figure how to mutate the name without corrupting the argument
-    fn parseNameToMapKey(buffer: []u8, name: []const u8) !void {
+    fn parseNameToMapKey(buffer: []u8, name: []const u8) !usize {
         var buffer_idx: usize = 0;
 
         if (name.len == 0) {
@@ -70,6 +76,8 @@ const ArgumentParser = struct {
                 buffer_idx += 1;
             }
         }
+
+        return buffer_idx;
     }
 
     /// Adds an argument to the parser.
@@ -79,7 +87,9 @@ const ArgumentParser = struct {
     /// This lines up currently with the philosophy of the zig standard library but may change as some of the apis have.
     /// TODO adding the name parsing functionality
     pub fn add_argument(self: *Self, options: ParserArg) !void {
-        try self.arg_table.put(options.name, options);
+        var buf: [512]u8 = undefined;
+        const len: usize = try parseNameToMapKey(&buf, options.name);
+        try self.arg_table.put(try self.ally.dupe(u8, buf[0..len]), options);
     }
 
     /// The get for the hashmap might be broken as this is a kind of hack to get the value
@@ -114,7 +124,7 @@ test "ArgumentParser dash string" {
         .help = "test help",
     });
 
-    const arg = try parser.get("--test-dash");
+    const arg = try parser.get("test_dash");
 
     try std.testing.expectEqual("--test-dash", arg.name);
 }
