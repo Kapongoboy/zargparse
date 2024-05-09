@@ -10,8 +10,8 @@ const std = @import("std");
 
 /// The main primitive of the module, the ParserArg struct is used to add arguments
 /// to your programs argument parser
-const ParserArg = struct {
-    const ArgType = enum {
+pub const ParserArg = struct {
+    pub const ArgType = enum {
         STRING,
         INT,
         FLOAT,
@@ -26,7 +26,7 @@ const ParserArg = struct {
     arg_type: ArgType = ArgType.STRING,
 };
 
-const ArgumentParser = struct {
+pub const ArgumentParser = struct {
     const Self = @This();
 
     const ParserError = error{
@@ -106,6 +106,14 @@ const ArgumentParser = struct {
         if (self.arg_table.get(key)) |arg| {
             return arg;
         } else return ParserError.ArgumentNotFound;
+    }
+
+    /// MAJOR TODO, This function is the heart of the parser
+    /// and will abstract away putting everything in the right place
+    /// Still deciding on an optimal design for it's functionality;
+    pub fn parseArgs(self: *Self) !void {
+        _ = self;
+        @compileError("This function still needs to be implemented \n");
     }
 };
 
