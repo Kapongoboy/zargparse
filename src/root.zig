@@ -1,5 +1,15 @@
+//! The zargparse module attempts to emulate the user-friendly command-line
+//! parsing module from python, zarparse. Using the simple to understand primitives
+//! you can easily define the arguments your program can accept.
+//!
+//! The module is still
+//! experimental and help, usage and invalid argument error messages are still in
+//! the works.
+
 const std = @import("std");
 
+/// The main primitive of the module, the ParserArg struct is used to add arguments
+/// to your programs argument parser
 const ParserArg = struct {
     const ArgType = enum {
         STRING,
@@ -82,10 +92,9 @@ const ArgumentParser = struct {
 
     /// Adds an argument to the parser.
     /// Returns an Allocator.Error from the internal lookup table.
-    /// Due to the current state of zig libraries, rather than ergonomic functions to build the ParserArg.
+    /// Due to the current state of zig libraries, rather than ergonomic functions to build the ParserArg
     /// Struct, Instead a complete ParserArg struct is passed to the function.
     /// This lines up currently with the philosophy of the zig standard library but may change as some of the apis have.
-    /// TODO adding the name parsing functionality
     pub fn add_argument(self: *Self, options: ParserArg) !void {
         var buf: [512]u8 = undefined;
         const len: usize = try parseNameToMapKey(&buf, options.name);
