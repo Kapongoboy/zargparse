@@ -7,10 +7,11 @@
 //! the works.
 
 const std = @import("std");
-const stdout = std.io.getStdOut().writer();
 
 /// The main primitive of the module, the ParserArg struct is used to add arguments
 /// to your programs argument parser
+///
+/// The only required fields are `name` and `help`, the rest are optional.
 pub const ParserArg = struct {
     pub const ArgType = enum {
         STRING,
@@ -22,7 +23,7 @@ pub const ParserArg = struct {
     name: []const u8,
     help: []const u8,
     default: ?[]const u8 = null,
-    action: ?[]const u8 = null,
+    action: []const u8 = "store",
     metavar: ?[]const u8 = null,
     arg_type: ArgType = ArgType.STRING,
 };
@@ -35,6 +36,7 @@ pub const ArgumentParser = struct {
         MissingArgument,
         ArgumentNotFound,
         ArgumentTooLong,
+        ParserLocked,
     };
 
     const Value = union {
@@ -44,14 +46,13 @@ pub const ArgumentParser = struct {
         boolean: bool,
     };
 
-    arg_iter: std.process.ArgIterator,
     arg_table: std.StringHashMap(ParserArg),
     program_store: std.StringHashMap(Value),
+    locked: bool = false,
     ally: std.mem.Allocator,
 
     pub fn init(a: std.mem.Allocator) !ArgumentParser {
         return ArgumentParser{
-            .arg_iter = try std.process.ArgIterator.initWithAllocator(a),
             .arg_table = std.StringHashMap(ParserArg).init(a),
             .program_store = std.StringHashMap(Value).init(a),
             .ally = a,
@@ -60,13 +61,19 @@ pub const ArgumentParser = struct {
 
     pub fn deinit(self: *Self) void {
         defer {
-            self.arg_iter.deinit();
+            self.program_store.deinit();
             self.arg_table.deinit();
         }
 
         var iter = self.arg_table.keyIterator();
 
         while (iter.next()) |key| {
+            self.ally.free(key.*);
+        }
+
+        var piter = self.program_store.keyIterator();
+
+        while (piter.next()) |key| {
             self.ally.free(key.*);
         }
     }
@@ -113,64 +120,96 @@ pub const ArgumentParser = struct {
     /// Struct, Instead a complete ParserArg struct is passed to the function.
     /// This lines up currently with the philosophy of the zig standard library but may change as some of the apis have.
     pub fn addArgument(self: *Self, options: ParserArg) !void {
+        if (self.locked) {
+            return ParserError.ParserLocked;
+        }
+
         var buf: [512]u8 = undefined;
         const len: usize = try parseNameToMapKey(&buf, options.name);
         try self.arg_table.put(try self.ally.dupe(u8, buf[0..len]), options);
     }
 
     /// The get for the hashmap might be broken as this is a kind of hack to get the value
-    pub fn get(self: *Self, key: []const u8) ParserError!ParserArg {
+    pub fn getArg(self: *Self, key: []const u8) ParserError!ParserArg {
         if (self.arg_table.get(key)) |arg| {
             return arg;
         } else return ParserError.ArgumentNotFound;
     }
 
+    pub fn getValue(self: *Self, key: []const u8) ?Value {
+        return self.program_store.get(key);
+    }
+
     // fn checkFlag() bool {} // TODO will need when having unqualified values as an option
 
-    /// MAJOR TODO, This function is the heart of the parser
-    /// and will abstract away putting everything in the right place
-    /// Still deciding on an optimal design for it's functionality;
-    pub fn parseArgs(self: *Self) !void {
-        while (self.arg_iter.next()) |arg| {
-            const arg_internal = self.get(try flagToString(arg)) catch |e| {
-                try stdout.print("Argument {s} was not found as valid for the program, use -h to get the valid argument, error {e}\n", .{ arg, e });
+    /// Still a work in progress, This function is the heart of the parser
+    /// and abstractes away putting everything in the right place
+    /// Import notes:
+    /// - Arguments of the kind "--ice" will be stored as "ice"
+    /// - Arguments of the kind "--ice-cream" will be stored as "ice_cream"
+    /// It is important to remember that in order to get the right value of an argument
+    ///
+    /// Arguments are store by default, therefore for args that are store but
+    /// have no pair value, the value is set as a boolean with the value true
+    pub fn parseArgs(self: *Self, args: [][]const u8) !void {
+        if (self.locked) {
+            return ParserError.ParserLocked;
+        }
+
+        var idx: usize = 0;
+
+        while (idx < args.len) {
+            const arg = args[idx];
+            var buf: [512]u8 = undefined;
+            const len: usize = try parseNameToMapKey(&buf, arg);
+
+            const arg_internal = self.getArg(buf[0..len]) catch |e| {
+                std.debug.print("Argument {s} was not found as valid for the program, use -h to get the valid argument, error {}\n", .{ arg, e });
                 return;
             };
 
             if (std.mem.eql(u8, arg_internal.action, "store")) {
-                if (self.arg_iter.next()) |val| {
+                idx += 1;
+                if (idx < args.len) {
+                    const val = args[idx];
+
                     switch (arg_internal.arg_type) {
                         ParserArg.ArgType.STRING => {
-                            self.program_store.put(try self.ally.dupe(u8, try flagToString(arg_internal.name)), .{ .str = val });
+                            try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .str = val });
                         },
                         ParserArg.ArgType.INT => {
                             const num = try std.fmt.parseInt(i64, val, 10);
-                            self.program_store.put(try self.ally.dupe(u8, try flagToString(arg_internal.name)), .{ .num = num });
+                            try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .num = num });
                         },
                         ParserArg.ArgType.FLOAT => {
                             const flt = try std.fmt.parseFloat(f64, val);
-                            self.program_store.put(try self.ally.dupe(u8, try flagToString(arg_internal.name)), .{ .flt = flt });
+                            try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .flt = flt });
                         },
                         ParserArg.ArgType.BOOL => {
-                            const result: bool = undefined;
+                            var result: bool = undefined;
 
                             if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "yes") or std.mem.eql(u8, val, "1")) {
                                 result = true;
                             } else if (std.mem.eql(u8, val, "false") or std.mem.eql(u8, val, "no") or std.mem.eql(u8, val, "0")) {
                                 result = false;
                             } else {
-                                try stdout.print("Argument {s} requires a boolean value\n", .{arg});
+                                std.debug.print("Argument {s} requires a boolean value\n", .{arg});
                                 return;
                             }
-                            self.program_store.put(try self.ally.dupe(u8, try flagToString(arg_internal.name)), .{ .boolean = result });
+                            try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .boolean = result });
                         },
                     }
                 } else {
-                    try stdout.print("Argument {s} requires a value\n", .{arg});
+                    std.debug.print("Argument {s} requires a value\n", .{arg});
                     return;
                 }
+            } else {
+                try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .boolean = true });
             }
+            idx += 1;
         }
+
+        self.locked = true;
     }
 };
 
@@ -183,7 +222,7 @@ test "ArgumentParser basic test" {
         .help = "test help",
     });
 
-    const arg = try parser.get("test");
+    const arg = try parser.getArg("test");
 
     try std.testing.expectEqual("test", arg.name);
     try std.testing.expectEqual("test help", arg.help);
@@ -198,7 +237,133 @@ test "ArgumentParser dash string" {
         .help = "test help",
     });
 
-    const arg = try parser.get("test_dash");
+    const arg = try parser.getArg("test_dash");
 
     try std.testing.expectEqual("--test-dash", arg.name);
+}
+
+test "Argument Parser parse arg str" {
+    var parser = try ArgumentParser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    try parser.addArgument(ParserArg{
+        .name = "repo",
+        .metavar = "REPO",
+        .arg_type = ParserArg.ArgType.STRING,
+        .help = "path to the repository this will observe",
+    });
+
+    const first = "repo";
+    const second = "/path/to/repo";
+
+    var args_arr = [_][]const u8{ first, second };
+
+    try parser.parseArgs(&args_arr);
+
+    if (parser.getValue("repo")) |val| {
+        try std.testing.expect(std.mem.eql(u8, "/path/to/repo", val.str));
+    } else {
+        std.debug.print("Value not found\n", .{});
+        try std.testing.expect(false);
+    }
+}
+
+test "Argument Parser parse arg int" {
+    var parser = try ArgumentParser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    try parser.addArgument(ParserArg{
+        .name = "--num-times",
+        .arg_type = ParserArg.ArgType.INT,
+        .help = "the number of times I want",
+    });
+
+    const first = "--num-times";
+    const second = "12398";
+
+    var args_arr = [_][]const u8{ first, second };
+
+    try parser.parseArgs(&args_arr);
+
+    if (parser.getValue("num_times")) |val| {
+        try std.testing.expectEqual(val.num, 12398);
+    } else {
+        std.debug.print("Value not found\n", .{});
+        try std.testing.expect(false);
+    }
+}
+
+test "Argument Parser parse arg bool" {
+    var parser = try ArgumentParser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    try parser.addArgument(ParserArg{
+        .name = "--do-it-to-me",
+        .arg_type = ParserArg.ArgType.BOOL,
+        .help = "hit me baby one more time",
+    });
+
+    const first = "--do-it-to-me";
+    const second = "no";
+
+    var args_arr = [_][]const u8{ first, second };
+
+    try parser.parseArgs(&args_arr);
+
+    if (parser.getValue("do_it_to_me")) |val| {
+        try std.testing.expect(!val.boolean);
+    } else {
+        std.debug.print("Value not found\n", .{});
+        try std.testing.expect(false);
+    }
+}
+
+test "Argument Parser parse arg float" {
+    var parser = try ArgumentParser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    try parser.addArgument(ParserArg{
+        .name = "--out-of-Space",
+        .arg_type = ParserArg.ArgType.FLOAT,
+        .help = "rolly rolly rolly got me star gazing",
+    });
+
+    const first = "--out-of-Space";
+    const second = "3.14";
+
+    var args_arr = [_][]const u8{ first, second };
+
+    try parser.parseArgs(&args_arr);
+
+    if (parser.getValue("out_of_Space")) |val| {
+        try std.testing.expectEqual(val.flt, 3.14);
+    } else {
+        std.debug.print("Value not found\n", .{});
+        try std.testing.expect(false);
+    }
+}
+
+test "Argument Parser test lock" {
+    var parser = try ArgumentParser.init(std.testing.allocator);
+    defer parser.deinit();
+
+    try parser.addArgument(ParserArg{
+        .name = "test",
+        .help = "test",
+    });
+
+    const first = "test";
+    const second = "test";
+
+    var args_arr = [_][]const u8{ first, second };
+
+    try parser.parseArgs(&args_arr);
+
+    parser.addArgument(ParserArg{ .name = "another", .help = "another" }) catch |e| {
+        try std.testing.expectEqual(e, ArgumentParser.ParserError.ParserLocked);
+    };
+
+    parser.parseArgs(&args_arr) catch |e| {
+        try std.testing.expectEqual(e, ArgumentParser.ParserError.ParserLocked);
+    };
 }
