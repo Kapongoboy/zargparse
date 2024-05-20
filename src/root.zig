@@ -51,7 +51,7 @@ pub const ArgumentParser = struct {
     locked: bool = false,
     ally: std.mem.Allocator,
 
-    pub fn init(a: std.mem.Allocator) !ArgumentParser {
+    pub fn init(a: std.mem.Allocator) ArgumentParser {
         return ArgumentParser{
             .arg_table = std.StringHashMap(ParserArg).init(a),
             .program_store = std.StringHashMap(Value).init(a),
@@ -214,7 +214,7 @@ pub const ArgumentParser = struct {
 };
 
 test "ArgumentParser basic test" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -229,7 +229,7 @@ test "ArgumentParser basic test" {
 }
 
 test "ArgumentParser dash string" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -243,7 +243,7 @@ test "ArgumentParser dash string" {
 }
 
 test "Argument Parser parse arg str" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -269,7 +269,7 @@ test "Argument Parser parse arg str" {
 }
 
 test "Argument Parser parse arg int" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -294,7 +294,7 @@ test "Argument Parser parse arg int" {
 }
 
 test "Argument Parser parse arg bool" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -319,7 +319,7 @@ test "Argument Parser parse arg bool" {
 }
 
 test "Argument Parser parse arg float" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
@@ -344,7 +344,7 @@ test "Argument Parser parse arg float" {
 }
 
 test "Argument Parser test lock" {
-    var parser = try ArgumentParser.init(std.testing.allocator);
+    var parser = ArgumentParser.init(std.testing.allocator);
     defer parser.deinit();
 
     try parser.addArgument(ParserArg{
