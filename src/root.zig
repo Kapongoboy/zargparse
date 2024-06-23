@@ -249,7 +249,7 @@ test "Argument Parser parse arg str" {
     try parser.addArgument(ParserArg{
         .name = "repo",
         .metavar = "REPO",
-        .arg_type = ParserArg.ArgType.STRING,
+        .arg_type = .STRING,
         .help = "path to the repository this will observe",
     });
 
@@ -274,7 +274,7 @@ test "Argument Parser parse arg int" {
 
     try parser.addArgument(ParserArg{
         .name = "--num-times",
-        .arg_type = ParserArg.ArgType.INT,
+        .arg_type = .INT,
         .help = "the number of times I want",
     });
 
@@ -299,7 +299,7 @@ test "Argument Parser parse arg bool" {
 
     try parser.addArgument(ParserArg{
         .name = "--do-it-to-me",
-        .arg_type = ParserArg.ArgType.BOOL,
+        .arg_type = .BOOL,
         .help = "hit me baby one more time",
     });
 
@@ -324,7 +324,7 @@ test "Argument Parser parse arg float" {
 
     try parser.addArgument(ParserArg{
         .name = "--out-of-Space",
-        .arg_type = ParserArg.ArgType.FLOAT,
+        .arg_type = .FLOAT,
         .help = "rolly rolly rolly got me star gazing",
     });
 
