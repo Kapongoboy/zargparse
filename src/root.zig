@@ -51,6 +51,10 @@ pub const ArgumentParser = struct {
     locked: bool = false,
     ally: std.mem.Allocator,
 
+    /// Initializes the ArgumentParser struct, unlocked by default
+    /// The **ArgumentParser** duplicates any strings passed to it, in order
+    /// to allow for the user to free the strings they pass to the parser,
+    /// and so that the Parser can maintain it's own copy of the strings.
     pub fn init(a: std.mem.Allocator) ArgumentParser {
         return ArgumentParser{
             .arg_table = std.StringHashMap(ParserArg).init(a),
@@ -86,7 +90,7 @@ pub const ArgumentParser = struct {
             return ParserError.InvalidArgument;
         }
 
-        if (name.len > 512) {
+        if (name.len > 512) { // conflicted on this one, could just use an allocator instead of buffer
             return ParserError.ArgumentTooLong;
         }
 
@@ -110,7 +114,7 @@ pub const ArgumentParser = struct {
     /// This probably needs some care
     fn flagToString(str: []const u8) ![]u8 {
         var buf: [512]u8 = undefined;
-        const len: usize = try parseNameToMapKey(&buf, str);
+        const len: usize = try parseNameToMapKey(&buf, str); // maybe look into writer stuff
         return buf[0..len];
     }
 
@@ -136,6 +140,8 @@ pub const ArgumentParser = struct {
         } else return ParserError.ArgumentNotFound;
     }
 
+    /// returns the stored value of the argument if it was given to the program,
+    /// otherwise it returns null
     pub fn getValue(self: *Self, key: []const u8) ?Value {
         return self.program_store.get(key);
     }
@@ -144,7 +150,7 @@ pub const ArgumentParser = struct {
 
     /// Still a work in progress, This function is the heart of the parser
     /// and abstractes away putting everything in the right place
-    /// Import notes:
+    /// Important notes:
     /// - Arguments of the kind "--ice" will be stored as "ice"
     /// - Arguments of the kind "--ice-cream" will be stored as "ice_cream"
     /// It is important to remember that in order to get the right value of an argument
@@ -174,18 +180,18 @@ pub const ArgumentParser = struct {
                     const val = args[idx];
 
                     switch (arg_internal.arg_type) {
-                        ParserArg.ArgType.STRING => {
+                        .STRING => {
                             try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .str = val });
                         },
-                        ParserArg.ArgType.INT => {
+                        .INT => {
                             const num = try std.fmt.parseInt(i64, val, 10);
                             try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .num = num });
                         },
-                        ParserArg.ArgType.FLOAT => {
+                        .FLOAT => {
                             const flt = try std.fmt.parseFloat(f64, val);
                             try self.program_store.put(try self.ally.dupe(u8, buf[0..len]), .{ .flt = flt });
                         },
-                        ParserArg.ArgType.BOOL => {
+                        .BOOL => {
                             var result: bool = undefined;
 
                             if (std.mem.eql(u8, val, "true") or std.mem.eql(u8, val, "yes") or std.mem.eql(u8, val, "1")) {
